@@ -1,0 +1,15 @@
+[
+  {
+    "id": "a512071c-981f-4da4-a601-853b0e45baa6",
+    "command": "agy",
+    "cwd": "/home/alexander/Documentos/Radio Brasil",
+    "title": "👑 Piloto Líder · Agy",
+    "status": "active",
+    "role": "PILOTO",
+    "workspace_id": "ws-new-1792944371748",
+    "workspace_cwd": "/home/alexander/Documentos/Radio Brasil",
+    "worktree_path": null,
+    "branch": null,
+    "created_at_ms": 1792944371839
+  }
+]

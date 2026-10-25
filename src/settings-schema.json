@@ -1,0 +1,121 @@
+{
+  "layout": {
+    "type": "layout",
+    "pages": [
+      "general-page",
+      "audio-page",
+      "recording-page"
+    ],
+    "general-page": {
+      "type": "page",
+      "title": "Geral & Painel",
+      "sections": [
+        "appearance-section",
+        "notifications-section"
+      ]
+    },
+    "audio-page": {
+      "type": "page",
+      "title": "Áudio & Reprodução",
+      "sections": [
+        "playback-section"
+      ]
+    },
+    "recording-page": {
+      "type": "page",
+      "title": "Gravações",
+      "sections": [
+        "recording-section"
+      ]
+    },
+    "appearance-section": {
+      "type": "section",
+      "title": "Exibição na Barra de Tarefas",
+      "keys": [
+        "show-station-on-panel",
+        "panel-text-type",
+        "max-panel-text-length"
+      ]
+    },
+    "notifications-section": {
+      "type": "section",
+      "title": "Notificações do Sistema",
+      "keys": [
+        "show-notifications"
+      ]
+    },
+    "playback-section": {
+      "type": "section",
+      "title": "Preferências de Áudio",
+      "keys": [
+        "initial-volume",
+        "keep-volume-between-sessions",
+        "auto-reconnect"
+      ]
+    },
+    "recording-section": {
+      "type": "section",
+      "title": "Gravação de Transmissões ao Vivo",
+      "keys": [
+        "record-directory"
+      ]
+    }
+  },
+  "show-station-on-panel": {
+    "type": "checkbox",
+    "default": false,
+    "description": "Exibir texto da rádio na barra de tarefas",
+    "tooltip": "Mostra o nome da rádio ou a faixa tocando ao lado do ícone no painel"
+  },
+  "panel-text-type": {
+    "type": "radiogroup",
+    "default": "station",
+    "description": "Conteúdo exibido na barra",
+    "options": {
+      "Apenas o Nome da Estação": "station",
+      "Nome da Música / Programa": "track",
+      "Estação + Música": "both"
+    },
+    "dependency": "show-station-on-panel"
+  },
+  "max-panel-text-length": {
+    "type": "spinbutton",
+    "default": 24,
+    "min": 10,
+    "max": 60,
+    "step": 2,
+    "units": "caracteres",
+    "description": "Limite de caracteres na barra",
+    "dependency": "show-station-on-panel"
+  },
+  "show-notifications": {
+    "type": "checkbox",
+    "default": true,
+    "description": "Notificar quando a rádio ou música mudar",
+    "tooltip": "Emite uma notificação na área de trabalho ao trocar de estação ou faixa"
+  },
+  "initial-volume": {
+    "type": "spinbutton",
+    "default": 80,
+    "min": 0,
+    "max": 100,
+    "step": 5,
+    "units": "%",
+    "description": "Volume inicial padrão"
+  },
+  "keep-volume-between-sessions": {
+    "type": "checkbox",
+    "default": true,
+    "description": "Lembrar o último volume utilizado"
+  },
+  "auto-reconnect": {
+    "type": "checkbox",
+    "default": true,
+    "description": "Reconectar automaticamente se a conexão oscilar"
+  },
+  "record-directory": {
+    "type": "entry",
+    "default": "~/Música/RadioViva",
+    "description": "Pasta de destino das gravações MP3"
+  }
+}

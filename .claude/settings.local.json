@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Notification": [
+      {
+        "command": "paddock notify \"Claude Code aguarda sua atenção ou autorização\""
+      }
+    ],
+    "Stop": [
+      {
+        "command": "paddock notify \"Claude Code concluiu a execução da tarefa\""
+      }
+    ]
+  }
+}
