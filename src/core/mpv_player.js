@@ -37,6 +37,7 @@ var MpvPlayer = class MpvPlayer {
         this.currentStation = null;
         this.currentTitle = "";
         this.currentVolume = 80;
+        this.savedVolumeBeforeMute = 80;
         this.isRecording = false;
         this.recordingPath = "";
 
@@ -187,7 +188,9 @@ var MpvPlayer = class MpvPlayer {
         if (msg.event === "property-change") {
             this._handlePropertyChange(msg.name, msg.data);
         } else if (msg.event === "playback-restart") {
-            this._setStatus(PlaybackStatus.PLAYING);
+            if (this.status !== PlaybackStatus.STOPPED) {
+                this._setStatus(PlaybackStatus.PLAYING);
+            }
         } else if (msg.event === "end-file") {
             if (msg.reason === "error") {
                 this._handlePlaybackError();
@@ -274,6 +277,7 @@ var MpvPlayer = class MpvPlayer {
         this._setStatus(PlaybackStatus.LOADING);
 
         const doPlay = () => {
+            if (this.status === PlaybackStatus.STOPPED) return;
             this.sendCommand(["loadfile", station.url, "replace"]);
             this.sendCommand(["set_property", "pause", false]);
         };
@@ -301,7 +305,9 @@ var MpvPlayer = class MpvPlayer {
     }
 
     stop() {
+        this.reconnectAttempts = this.maxReconnectAttempts;
         this.sendCommand(["stop"]);
+        this.sendCommand(["set_property", "pause", true]);
         this._setStatus(PlaybackStatus.STOPPED);
     }
 
@@ -314,6 +320,15 @@ var MpvPlayer = class MpvPlayer {
 
     changeVolume(delta) {
         this.setVolume(this.currentVolume + delta);
+    }
+
+    toggleMute() {
+        if (this.currentVolume > 0) {
+            this.savedVolumeBeforeMute = this.currentVolume;
+            this.setVolume(0);
+        } else {
+            this.setVolume(this.savedVolumeBeforeMute || 80);
+        }
     }
 
     startRecording(customDir) {

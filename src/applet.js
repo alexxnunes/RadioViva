@@ -56,6 +56,7 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         this._initSettings();
         this._initUi();
         this._buildMenu();
+        this._buildContextMenu();
 
         // Scroll do mouse no ícone para alterar volume
         this.actor.connect("scroll-event", this._onScrollEvent.bind(this));
@@ -146,6 +147,9 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         if (this.volumeSlider) {
             this.volumeSlider.setValue(vol / 100);
         }
+        if (this.volPercentLabel) {
+            this.volPercentLabel.set_text(`${vol}%`);
+        }
     }
 
     on_applet_clicked(event) {
@@ -153,7 +157,54 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     }
 
     on_applet_middle_clicked(event) {
-        this.player.togglePause();
+        if (this.player.status === this.PlaybackStatus.PLAYING) {
+            this.player.togglePause();
+        } else if (this.player.status === this.PlaybackStatus.PAUSED) {
+            this.player.togglePause();
+        } else {
+            const favs = this.catalog.getFavorites();
+            if (favs.length > 0) {
+                this._playStation(favs[0]);
+            }
+        }
+    }
+
+    _createButton(iconName, tooltipText, styleClass, onClick) {
+        const btn = new St.Button({
+            style_class: `radioviva-action-button ${styleClass || ''}`,
+            reactive: true,
+            can_focus: true,
+            track_hover: true
+        });
+        const icon = new St.Icon({
+            icon_name: iconName,
+            icon_size: 18,
+            icon_type: St.IconType.SYMBOLIC
+        });
+        btn.set_child(icon);
+
+        let debounce = false;
+        const trigger = () => {
+            if (!debounce) {
+                debounce = true;
+                onClick();
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+                    debounce = false;
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        };
+
+        btn.connect("clicked", trigger);
+        btn.connect("button-release-event", (actor, event) => {
+            if (event.get_button() === 1) {
+                trigger();
+                return Clutter.EVENT_STOP;
+            }
+            return Clutter.EVENT_PROPAGATE;
+        });
+
+        return { btn, icon };
     }
 
     _buildMenu() {
@@ -161,10 +212,13 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         this.menu = new Applet.AppletPopupMenu(this, this.orientation);
         this.menuManager.addMenu(this.menu);
 
-        // 1. Player Card Superior
+        // 1. Player Card Superior (Controles principais)
         this._buildPlayerCard();
 
-        // 2. Barra de Busca
+        // 2. Ações rápidas diretas no menu (100% à prova de falhas)
+        this._buildQuickControls();
+
+        // 3. Barra de Busca
         this._buildSearchBar();
 
         // Separador
@@ -178,7 +232,7 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         this.navSection = new PopupMenu.PopupMenuSection();
         this.menu.addMenuItem(this.navSection);
 
-        // 3. Submenus
+        // 4. Submenus
         this._buildFavoritesSubmenu();
         this._buildRecentsSubmenu();
         this._buildTopBrasilSubmenu();
@@ -193,7 +247,7 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     }
 
     _buildPlayerCard() {
-        this.playerCard = new PopupMenu.PopupBaseMenuItem({ reactive: false });
+        this.playerCard = new PopupMenu.PopupBaseMenuItem({ reactive: true });
         this.playerCard.actor.add_style_class_name("radioviva-player-card");
 
         const vbox = new St.BoxLayout({ vertical: true, x_expand: true });
@@ -217,61 +271,151 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         });
         vbox.add_child(this.cardTrack);
 
-        // Linha 3: Controles
+        // Linha 3: Controles de Reprodução (Botões em destaque)
         const controls = new St.BoxLayout({
             vertical: false,
             style_class: "radioviva-controls-row",
-            y_align: Clutter.ActorAlign.CENTER
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true
         });
 
-        // Botão Play/Pause
-        this.playBtn = new St.Button({ style_class: "radioviva-action-button" });
-        this.playBtnIcon = new St.Icon({ icon_name: "media-playback-start-symbolic", icon_size: 16 });
-        this.playBtn.set_child(this.playBtnIcon);
-        this.playBtn.connect("clicked", () => this.player.togglePause());
+        // Botão Play / Pause
+        const playCtrl = this._createButton("media-playback-start-symbolic", "Play / Pause", "radioviva-btn-play", () => {
+            this.player.togglePause();
+        });
+        this.playBtn = playCtrl.btn;
+        this.playBtnIcon = playCtrl.icon;
 
-        // Botão Stop
-        this.stopBtn = new St.Button({ style_class: "radioviva-action-button" });
-        this.stopBtn.set_child(new St.Icon({ icon_name: "media-playback-stop-symbolic", icon_size: 16 }));
-        this.stopBtn.connect("clicked", () => this.player.stop());
+        // Botão Stop (Parar)
+        const stopCtrl = this._createButton("media-playback-stop-symbolic", "Parar Reprodução", "radioviva-btn-stop", () => {
+            this.player.stop();
+        });
+        this.stopBtn = stopCtrl.btn;
 
         // Botão Favoritar
-        this.favBtn = new St.Button({ style_class: "radioviva-action-button" });
-        this.favBtnIcon = new St.Icon({ icon_name: "non-starred-symbolic", icon_size: 16 });
-        this.favBtn.set_child(this.favBtnIcon);
-        this.favBtn.connect("clicked", () => this._onToggleCurrentFavorite());
+        const favCtrl = this._createButton("non-starred-symbolic", "Favoritar / Desfavoritar", "", () => {
+            this._onToggleCurrentFavorite();
+        });
+        this.favBtn = favCtrl.btn;
+        this.favBtnIcon = favCtrl.icon;
 
         // Botão Gravação
-        this.recBtn = new St.Button({ style_class: "radioviva-action-button" });
-        this.recBtnIcon = new St.Icon({ icon_name: "media-record-symbolic", icon_size: 16 });
-        this.recBtn.set_child(this.recBtnIcon);
-        this.recBtn.connect("clicked", () => this._onToggleRecording());
+        const recCtrl = this._createButton("media-record-symbolic", "Gravar Transmissão", "", () => {
+            this._onToggleRecording();
+        });
+        this.recBtn = recCtrl.btn;
+        this.recBtnIcon = recCtrl.icon;
 
         // Botão Copiar Título
-        this.copyBtn = new St.Button({ style_class: "radioviva-action-button" });
-        this.copyBtn.set_child(new St.Icon({ icon_name: "edit-copy-symbolic", icon_size: 16 }));
-        this.copyBtn.connect("clicked", () => this._copyCurrentTrack());
+        const copyCtrl = this._createButton("edit-copy-symbolic", "Copiar Nome da Música", "", () => {
+            this._copyCurrentTrack();
+        });
 
         controls.add_child(this.playBtn);
         controls.add_child(this.stopBtn);
         controls.add_child(this.favBtn);
         controls.add_child(this.recBtn);
-        controls.add_child(this.copyBtn);
+        controls.add_child(copyCtrl.btn);
         vbox.add_child(controls);
+
+        // Linha 4: Barra de Volume com Botões [-] e [+]
+        const volRow = new St.BoxLayout({
+            vertical: false,
+            style_class: "radioviva-volume-row",
+            y_align: Clutter.ActorAlign.CENTER,
+            x_expand: true
+        });
+
+        // Botão Mudo
+        const muteCtrl = this._createButton("audio-volume-muted-symbolic", "Mudo / Desmutar", "radioviva-volume-btn", () => {
+            this.player.toggleMute();
+        });
+
+        // Botão Diminuir Volume
+        const volDownCtrl = this._createButton("audio-volume-low-symbolic", "Diminuir Volume (-5%)", "radioviva-volume-btn", () => {
+            this.player.changeVolume(-5);
+        });
+
+        // Botão Aumentar Volume
+        const volUpCtrl = this._createButton("audio-volume-high-symbolic", "Aumentar Volume (+5%)", "radioviva-volume-btn", () => {
+            this.player.changeVolume(5);
+        });
+
+        this.volPercentLabel = new St.Label({
+            text: `${this.player.currentVolume}%`,
+            style_class: "radioviva-volume-label",
+            y_align: Clutter.ActorAlign.CENTER
+        });
+
+        volRow.add_child(muteCtrl.btn);
+        volRow.add_child(volDownCtrl.btn);
+        volRow.add_child(this.volPercentLabel);
+        volRow.add_child(volUpCtrl.btn);
+        vbox.add_child(volRow);
 
         this.playerCard.actor.add_child(vbox);
         this.menu.addMenuItem(this.playerCard);
 
-        // Volume Slider
+        // Slider de Volume contínuo
         this.volumeSlider = new PopupMenu.PopupSliderMenuItem(this.player.currentVolume / 100);
         this.volumeSlider.connect("value-changed", (slider, val) => {
             const vol = Math.round(val * 100);
             this.player.setVolume(vol);
+            if (this.volPercentLabel) {
+                this.volPercentLabel.set_text(`${vol}%`);
+            }
             if (this.keepVolume) {
                 this.initialVolume = vol;
             }
         });
         this.menu.addMenuItem(this.volumeSlider);
+    }
+
+    _buildQuickControls() {
+        // Itens de menu dedicados para garantir 100% de usabilidade em qualquer tema
+        this.stopMenuItem = new PopupMenu.PopupIconMenuItem("⏹️  Parar Reprodução", "media-playback-stop-symbolic", St.IconType.SYMBOLIC);
+        this.stopMenuItem.actor.add_style_class_name("radioviva-control-item");
+        this.stopMenuItem.connect("activate", () => this.player.stop());
+        this.menu.addMenuItem(this.stopMenuItem);
+
+        this.pauseMenuItem = new PopupMenu.PopupIconMenuItem("⏸️  Pausar / Continuar", "media-playback-pause-symbolic", St.IconType.SYMBOLIC);
+        this.pauseMenuItem.actor.add_style_class_name("radioviva-control-item");
+        this.pauseMenuItem.connect("activate", () => this.player.togglePause());
+        this.menu.addMenuItem(this.pauseMenuItem);
+    }
+
+    _buildContextMenu() {
+        this._applet_context_menu.removeAll();
+
+        const stopItem = new PopupMenu.PopupIconMenuItem("⏹️ Parar Reprodução", "media-playback-stop-symbolic", St.IconType.SYMBOLIC);
+        stopItem.connect("activate", () => this.player.stop());
+        this._applet_context_menu.addMenuItem(stopItem);
+
+        const playPauseItem = new PopupMenu.PopupIconMenuItem("⏯️ Play / Pause", "media-playback-start-symbolic", St.IconType.SYMBOLIC);
+        playPauseItem.connect("activate", () => this.player.togglePause());
+        this._applet_context_menu.addMenuItem(playPauseItem);
+
+        this._applet_context_menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        const volUpItem = new PopupMenu.PopupIconMenuItem("🔊 Aumentar Volume (+5%)", "audio-volume-high-symbolic", St.IconType.SYMBOLIC);
+        volUpItem.connect("activate", () => this.player.changeVolume(5));
+        this._applet_context_menu.addMenuItem(volUpItem);
+
+        const volDownItem = new PopupMenu.PopupIconMenuItem("🔉 Diminuir Volume (-5%)", "audio-volume-low-symbolic", St.IconType.SYMBOLIC);
+        volDownItem.connect("activate", () => this.player.changeVolume(-5));
+        this._applet_context_menu.addMenuItem(volDownItem);
+
+        const muteItem = new PopupMenu.PopupIconMenuItem("🔇 Mudo / Desmutar", "audio-volume-muted-symbolic", St.IconType.SYMBOLIC);
+        muteItem.connect("activate", () => this.player.toggleMute());
+        this._applet_context_menu.addMenuItem(muteItem);
+
+        this._applet_context_menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        const settingsItem = new PopupMenu.PopupIconMenuItem("⚙️ Configurações...", "preferences-system-symbolic", St.IconType.SYMBOLIC);
+        settingsItem.connect("activate", () => {
+            Util.spawnCommandLine(`xlet-settings applet ${this.metadata.uuid} -i ${this.instanceId}`);
+        });
+        this._applet_context_menu.addMenuItem(settingsItem);
     }
 
     _buildSearchBar() {
@@ -532,15 +676,27 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     _onPlayerStatusChange(status) {
         if (status === this.PlaybackStatus.PLAYING) {
             this.playBtnIcon.set_icon_name("media-playback-pause-symbolic");
+            if (this.pauseMenuItem) {
+                this.pauseMenuItem.label.set_text("⏸️  Pausar");
+                this.pauseMenuItem.setIconSymbolicName("media-playback-pause-symbolic");
+            }
             this.set_applet_icon_symbolic_name("media-playback-start-symbolic");
             if (this.iconPath) this.set_applet_icon_path(this.iconPath);
         } else if (status === this.PlaybackStatus.PAUSED) {
             this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
+            if (this.pauseMenuItem) {
+                this.pauseMenuItem.label.set_text("▶️  Continuar Reprodução");
+                this.pauseMenuItem.setIconSymbolicName("media-playback-start-symbolic");
+            }
             this.cardTrack.set_text("Pausado");
         } else if (status === this.PlaybackStatus.LOADING) {
             this.cardTrack.set_text("Sintonizando transmissão...");
         } else if (status === this.PlaybackStatus.STOPPED) {
             this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
+            if (this.pauseMenuItem) {
+                this.pauseMenuItem.label.set_text("▶️  Tocar Rádio");
+                this.pauseMenuItem.setIconSymbolicName("media-playback-start-symbolic");
+            }
             this.cardTrack.set_text("Parado");
         } else if (status === this.PlaybackStatus.ERROR) {
             this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
@@ -566,6 +722,9 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     _onPlayerVolumeChange(volume) {
         if (this.volumeSlider) {
             this.volumeSlider.setValue(volume / 100);
+        }
+        if (this.volPercentLabel) {
+            this.volPercentLabel.set_text(`${volume}%`);
         }
         this._updateTooltip();
     }
@@ -645,7 +804,6 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     }
 
     _showAddCustomDialog() {
-        // Abre diálogo simples de inserção usando zenity ou script nativo
         const script = `zenity --forms --title="RadioViva - Adicionar Rádio" --text="Insira os dados da rádio:" --add-entry="Nome da Rádio" --add-entry="URL do Stream (ex: https://...)" --add-entry="Estado (UF, ex: SP)" --separator="|"`;
         Util.spawnCommandLineAsyncIO(script, (stdout, stderr) => {
             if (stdout && stdout.trim()) {
