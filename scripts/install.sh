@@ -50,7 +50,10 @@ print(str(arr))
     echo "[✓] RadioViva adicionado à lista de applets do painel."
 fi
 
-# 5. Recarrega Cinnamon para aplicar as mudanças
+# 5. Encerra qualquer processo anterior do MPV para evitar reprodução órfã
+pkill -u "$UID" -f "mpv.*radioviva" || true
+
+# 6. Recarrega Cinnamon para aplicar as mudanças
 if command -v cinnamon-dbus-command &> /dev/null; then
     echo "[*] Recarregando painel do Cinnamon..."
     cinnamon-dbus-command RestartCinnamon 0 || true
