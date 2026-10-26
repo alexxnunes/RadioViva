@@ -4,6 +4,7 @@
   "description": "Applet moderno para ouvir rádios de todo o Brasil diretamente na barra do Cinnamon",
   "icon": "icon",
   "version": "1.0.0",
+  "max-instances": 1,
   "cinnamon-version": [
     "5.4",
     "5.6",

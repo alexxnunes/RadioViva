@@ -264,19 +264,11 @@ class RadioVivaApplet extends Applet.TextIconApplet {
             this.player.toggleMute();
         });
 
-        // Botão Ver Programação / Site da Rádio
-        const progCtrl = this._createControlButton("applications-internet-symbolic", "Ver Programação da Rádio", "", () => {
-            const station = this.player.currentStation;
-            const term = station ? station.name : "radios do brasil";
-            Util.spawnCommandLine(`xdg-open "https://www.google.com/search?q=${encodeURIComponent(term + ' programacao grade')}"`);
-        });
-
         toolbar.add_child(this.playBtn);
         toolbar.add_child(this.stopBtn);
         toolbar.add_child(volDownCtrl.btn);
         toolbar.add_child(volUpCtrl.btn);
         toolbar.add_child(muteCtrl.btn);
-        toolbar.add_child(progCtrl.btn);
 
         this.playerCard.add_child(toolbar);
 
