@@ -24,8 +24,14 @@ var MpvPlayer = class MpvPlayer {
             onRecordingChange: (isRec, path) => {}
         }, callbacks);
 
-        const runtimeDir = GLib.get_user_runtime_dir() || "/tmp";
-        this.sockPath = `${runtimeDir}/radioviva-${GLib.get_user_name()}.sock`;
+        const runtimeDir = GLib.get_user_runtime_dir();
+        if (runtimeDir && GLib.file_test(runtimeDir, GLib.FileTest.IS_DIR)) {
+            this.sockPath = `${runtimeDir}/radioviva-${GLib.get_user_name()}.sock`;
+        } else {
+            const fallbackDir = `/tmp/radioviva-${GLib.get_user_name()}`;
+            GLib.mkdir_with_parents(fallbackDir, 0o700);
+            this.sockPath = `${fallbackDir}/radioviva.sock`;
+        }
 
         this.mpvProcess = null;
         this.socketConn = null;
@@ -50,7 +56,8 @@ var MpvPlayer = class MpvPlayer {
     _cleanSocketFile() {
         try {
             const file = Gio.File.new_for_path(this.sockPath);
-            if (file.query_exists(null)) {
+            const fileInfo = file.query_info("standard::type", Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
+            if (fileInfo) {
                 file.delete(null);
             }
         } catch (e) {
@@ -65,8 +72,15 @@ var MpvPlayer = class MpvPlayer {
 
         this._cleanSocketFile();
 
+        // Inicialização blindada do MPV daemon:
+        // --no-config: Impede carregamento de configs não controladas do usuário
+        // --load-scripts=no: Impede execução de plugins Lua de terceiros
+        // --ytdl=no: Impede chamada a python youtube-dl para streams de rádio
         const argv = [
             "/usr/bin/mpv",
+            "--no-config",
+            "--load-scripts=no",
+            "--ytdl=no",
             "--idle=yes",
             "--no-video",
             "--no-terminal",
@@ -272,13 +286,22 @@ var MpvPlayer = class MpvPlayer {
     play(station) {
         if (!station || !station.url) return;
 
+        // Validação estrita de URL (Apenas protocolos remotos permitidos para streaming de rádio)
+        const trimmedUrl = String(station.url).trim();
+        const isSafeProtocol = /^(https?|mms|rtmps?):\/\/[^\s"'`<>]+$/i.test(trimmedUrl);
+        if (!isSafeProtocol) {
+            global.logError(`[RadioViva] URL de stream bloqueada por segurança (protocolo não permitido): ${trimmedUrl}`);
+            this._setStatus(PlaybackStatus.ERROR);
+            return;
+        }
+
         this.currentStation = station;
         this.reconnectAttempts = 0;
         this._setStatus(PlaybackStatus.LOADING);
 
         const doPlay = () => {
             if (this.status === PlaybackStatus.STOPPED) return;
-            this.sendCommand(["loadfile", station.url, "replace"]);
+            this.sendCommand(["loadfile", trimmedUrl, "replace"]);
             this.sendCommand(["set_property", "pause", false]);
         };
 

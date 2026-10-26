@@ -182,7 +182,7 @@ class RadioVivaApplet extends Applet.TextIconApplet {
 
         const configItem = new PopupMenu.PopupIconMenuItem("⚙️  Configurar Rádios...", "preferences-system-symbolic", St.IconType.SYMBOLIC);
         configItem.connect("activate", () => {
-            Util.spawnCommandLine(`xlet-settings applet ${this.metadata.uuid} -i ${this.instanceId}`);
+            Util.spawn(["xlet-settings", "applet", this.metadata.uuid, "-i", String(this.instanceId)]);
         });
         this.menu.addMenuItem(configItem);
     }
@@ -365,7 +365,7 @@ class RadioVivaApplet extends Applet.TextIconApplet {
 
         const settingsItem = new PopupMenu.PopupIconMenuItem("⚙️ Configurações...", "preferences-system-symbolic", St.IconType.SYMBOLIC);
         settingsItem.connect("activate", () => {
-            Util.spawnCommandLine(`xlet-settings applet ${this.metadata.uuid} -i ${this.instanceId}`);
+            Util.spawn(["xlet-settings", "applet", this.metadata.uuid, "-i", String(this.instanceId)]);
         });
         this._applet_context_menu.addMenuItem(settingsItem);
     }
@@ -373,11 +373,12 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     _playStation(station) {
         if (!station || !station.url) return;
         this.player.play(station);
-        this.stationLabel.set_text(station.name);
+        this.stationLabel.set_text(station.name || "RadioViva");
         this.trackLabel.set_text("Conectando...");
 
         if (this.notifyOnStationChange) {
-            Main.notify("RadioViva", `Sintonizando: ${station.name}`);
+            const safeName = GLib.markup_escape_text(station.name || "Rádio", -1);
+            Main.notify("RadioViva", `Sintonizando: ${safeName}`);
         }
     }
 
@@ -405,13 +406,19 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     }
 
     _onPlayerMetadataChange(meta) {
-        const title = meta.title || "Ao vivo";
-        this.trackLabel.set_text(title);
+        let rawTitle = (meta.title || "Ao vivo").replace(/[\x00-\x1F\x7F]/g, "").trim();
+        if (rawTitle.length > 200) {
+            rawTitle = rawTitle.substring(0, 199) + "…";
+        }
+
+        this.trackLabel.set_text(rawTitle);
         this._updatePanelDisplay();
         this._updateTooltip();
 
-        if (this.showNotifications && meta.title && meta.station) {
-            Main.notify(`RadioViva - ${meta.station.name}`, meta.title);
+        if (this.showNotifications && rawTitle && meta.station) {
+            const safeStation = GLib.markup_escape_text(meta.station.name || "Rádio", -1);
+            const safeTitle = GLib.markup_escape_text(rawTitle, -1);
+            Main.notify(`RadioViva - ${safeStation}`, safeTitle);
         }
     }
 

@@ -6,8 +6,8 @@ TARGET_DIR="$HOME/.local/share/cinnamon/applets/$APPLET_UUID"
 
 echo "=== Desinstalador do RadioViva ($APPLET_UUID) ==="
 
-# 1. Encerra qualquer processo mpv do radioviva
-pkill -f "radioviva" || true
+# 1. Encerra qualquer processo mpv do radioviva pertencente ao usuário
+pkill -u "$UID" -f "/usr/bin/mpv.*radioviva" || true
 
 # 2. Remove da lista de applets ativos
 CURRENT_APPLETS=$(gsettings get org.cinnamon enabled-applets)
