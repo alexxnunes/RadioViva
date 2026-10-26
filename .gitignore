@@ -8,3 +8,9 @@ __pycache__/
 *.py[cod]
 *.sock
 
+# AI Assistants & Local Tools
+.claude/
+.paddock/
+.agents/
+.mcp.json
+
