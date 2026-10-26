@@ -1,8 +1,7 @@
 {
   "uuid": "radioviva@alexander",
   "name": "RadioViva",
-  "description": "Applet moderno para ouvir rádios de todo o Brasil diretamente na barra do Cinnamon",
-  "icon": "icon",
+  "description": "Modern applet to listen to radio stations from all over Brazil directly from the Cinnamon panel",
   "version": "1.0.0",
   "max-instances": 1,
   "cinnamon-version": [
@@ -14,6 +13,6 @@
     "6.4",
     "6.6"
   ],
-  "author": "Alexander",
+  "author": "alexxnunes",
   "multiversion": false
 }
