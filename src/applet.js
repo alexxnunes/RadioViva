@@ -1,7 +1,7 @@
 /**
  * RadioViva - Applet para Linux Mint Cinnamon
- * Rádios de todo o Brasil com catálogo de 1.600+ emissoras.
- * Botões diretos e rápidos: Play/Pause, Stop, Volume -, Volume +, Mudo, Slider.
+ * Interface limpa, rápida e 100% nativa.
+ * Integração com a janela de configurações e catálogo de 1.300+ rádios do Brasil.
  */
 
 const Applet = imports.ui.applet;
@@ -25,29 +25,13 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         imports.searchPath.unshift(metadata.path);
 
         const { MpvPlayer, PlaybackStatus } = imports.core.mpv_player;
-        const { CatalogManager, UF_NAMES, REGION_MAP } = imports.core.catalog_manager;
-        const { SleepTimer } = imports.core.sleep_timer;
-
         this.PlaybackStatus = PlaybackStatus;
-        this.UF_NAMES = UF_NAMES;
-        this.REGION_MAP = REGION_MAP;
 
-        this.catalog = new CatalogManager(metadata.path);
-
+        // Inicializa o motor de áudio MPV
         this.player = new MpvPlayer({
             onStatusChange: this._onPlayerStatusChange.bind(this),
             onMetadataChange: this._onPlayerMetadataChange.bind(this),
-            onVolumeChange: this._onPlayerVolumeChange.bind(this),
-            onRecordingChange: this._onPlayerRecordingChange.bind(this)
-        });
-
-        this.sleepTimer = new SleepTimer(this.player, {
-            onTick: () => this._updateSleepTimerLabel(),
-            onFinished: () => {
-                Main.notify("RadioViva", "Sleep Timer finalizado. Reprodução desligada.");
-                this._updateSleepTimerLabel();
-            },
-            onCancelled: () => this._updateSleepTimerLabel()
+            onVolumeChange: this._onPlayerVolumeChange.bind(this)
         });
 
         this._initSettings();
@@ -55,18 +39,19 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         this._buildMenu();
         this._buildContextMenu();
 
+        // Scroll no ícone do painel para controle de volume
         this.actor.connect("scroll-event", this._onScrollEvent.bind(this));
     }
 
     _initSettings() {
         this.settings = new Settings.AppletSettings(this, this.metadata.uuid, this.instanceId);
 
+        this.settings.bindProperty(Settings.BindingDirection.IN, "user-stations", "userStations", this._onUserStationsChanged.bind(this), null);
         this.settings.bindProperty(Settings.BindingDirection.IN, "show-station-on-panel", "showStationOnPanel", this._updatePanelDisplay.bind(this), null);
         this.settings.bindProperty(Settings.BindingDirection.IN, "panel-text-type", "panelTextType", this._updatePanelDisplay.bind(this), null);
         this.settings.bindProperty(Settings.BindingDirection.IN, "max-panel-text-length", "maxPanelTextLength", this._updatePanelDisplay.bind(this), null);
         this.settings.bindProperty(Settings.BindingDirection.IN, "show-notifications", "showNotifications", null, null);
         this.settings.bindProperty(Settings.BindingDirection.BIDIRECTIONAL, "initial-volume", "initialVolume", null, null);
-        this.settings.bindProperty(Settings.BindingDirection.IN, "record-directory", "recordDirectory", null, null);
         this.settings.bindProperty(Settings.BindingDirection.IN, "keep-volume-between-sessions", "keepVolume", null, null);
 
         if (this.initialVolume && typeof this.initialVolume === "number") {
@@ -148,13 +133,25 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         this.menu = new Applet.AppletPopupMenu(this, this.orientation);
         this.menuManager.addMenu(this.menu);
 
-        // 1. Barra de Botões Superiores (Play/Pause, Stop, Vol -, Vol +, Mute)
-        this._buildControlToolbar();
+        // Seção ativa (só exibida quando uma rádio está tocando ou pausada)
+        this.activeSection = new PopupMenu.PopupMenuSection();
+        this.menu.addMenuItem(this.activeSection);
 
-        // 2. Info da Rádio tocando
-        this._buildInfoSection();
+        // Info do Now Playing
+        this.nowPlayingItem = new PopupMenu.PopupMenuItem("Nenhuma rádio sintonizada", { reactive: false });
+        this.activeSection.addMenuItem(this.nowPlayingItem);
 
-        // 3. Slider de Volume
+        // Botão Stop (Parar)
+        this.stopItem = new PopupMenu.PopupIconMenuItem("⏹️  Parar Reprodução", "media-playback-stop-symbolic", St.IconType.SYMBOLIC);
+        this.stopItem.connect("activate", () => this.player.stop());
+        this.activeSection.addMenuItem(this.stopItem);
+
+        // Botão Play/Pause
+        this.playPauseItem = new PopupMenu.PopupIconMenuItem("⏸️  Pausar", "media-playback-pause-symbolic", St.IconType.SYMBOLIC);
+        this.playPauseItem.connect("activate", () => this.player.togglePause());
+        this.activeSection.addMenuItem(this.playPauseItem);
+
+        // Slider de Volume
         this.volumeSlider = new PopupMenu.PopupSliderMenuItem(this.player.currentVolume / 100);
         this.volumeSlider.connect("value-changed", (slider, val) => {
             const vol = Math.round(val * 100);
@@ -163,319 +160,55 @@ class RadioVivaApplet extends Applet.TextIconApplet {
                 this.initialVolume = vol;
             }
         });
-        this.menu.addMenuItem(this.volumeSlider);
+        this.activeSection.addMenuItem(this.volumeSlider);
 
+        this.activeSeparator = new PopupMenu.PopupSeparatorMenuItem();
+        this.activeSection.addMenuItem(this.activeSeparator);
+
+        // Inicialmente esconde a seção ativa se nada estiver tocando
+        this.activeSection.actor.visible = false;
+
+        // Seção das Rádios do Usuário (Minhas Rádios)
+        this.stationsSection = new PopupMenu.PopupMenuSection();
+        this.menu.addMenuItem(this.stationsSection);
+        this._populateUserStations();
+
+        // Separador e Acesso às Configurações
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // 4. Barra de Busca Rápida
-        this._buildSearchBar();
-
-        // Contêiner de Busca Dinâmica
-        this.searchResultsSection = new PopupMenu.PopupMenuSection();
-        this.menu.addMenuItem(this.searchResultsSection);
-
-        // Contêiner Principal de Rádios
-        this.mainSection = new PopupMenu.PopupMenuSection();
-        this.menu.addMenuItem(this.mainSection);
-
-        // 5. Lista Direta das Principais Rádios / Favoritos (Acesso Imediato)
-        this._buildFavoritesList();
-
-        this.mainSection.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-
-        // 6. Submenus de Exploração
-        this._buildStatesSubmenu();
-        this._buildGenresSubmenu();
-        this._buildSleepTimerSubmenu();
-        this._buildUtilityMenuItems();
-    }
-
-    _buildControlToolbar() {
-        const toolbar = new St.BoxLayout({
-            vertical: false,
-            x_align: Clutter.ActorAlign.CENTER,
-            style: "padding: 8px 6px; spacing: 6px;"
-        });
-
-        // 1. Botão Play / Pause
-        const playBtn = new St.Button({
-            style_class: "popup-menu-item",
-            style: "padding: 8px 16px; margin: 2px;",
-            reactive: true,
-            can_focus: true,
-            track_hover: true
-        });
-        this.playBtnIcon = new St.Icon({
-            icon_name: "media-playback-start-symbolic",
-            icon_size: 22,
-            icon_type: St.IconType.SYMBOLIC
-        });
-        playBtn.set_child(this.playBtnIcon);
-        playBtn.connect("button-release-event", (_, event) => {
-            if (event.get_button() !== 3) {
-                this.player.togglePause();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
-
-        // 2. Botão Stop (Parar)
-        const stopBtn = new St.Button({
-            style_class: "popup-menu-item",
-            style: "padding: 8px 16px; margin: 2px;",
-            reactive: true,
-            can_focus: true,
-            track_hover: true
-        });
-        const stopIcon = new St.Icon({
-            icon_name: "media-playback-stop-symbolic",
-            icon_size: 22,
-            icon_type: St.IconType.SYMBOLIC
-        });
-        stopBtn.set_child(stopIcon);
-        stopBtn.connect("button-release-event", (_, event) => {
-            if (event.get_button() !== 3) {
-                this.player.stop();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
-
-        // 3. Botão Volume Menos (-)
-        const volDownBtn = new St.Button({
-            style_class: "popup-menu-item",
-            style: "padding: 8px 12px; margin: 2px;",
-            reactive: true,
-            can_focus: true,
-            track_hover: true
-        });
-        const volDownIcon = new St.Icon({
-            icon_name: "audio-volume-low-symbolic",
-            icon_size: 18,
-            icon_type: St.IconType.SYMBOLIC
-        });
-        volDownBtn.set_child(volDownIcon);
-        volDownBtn.connect("button-release-event", (_, event) => {
-            if (event.get_button() !== 3) {
-                this.player.changeVolume(-5);
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
-
-        // 4. Botão Volume Mais (+)
-        const volUpBtn = new St.Button({
-            style_class: "popup-menu-item",
-            style: "padding: 8px 12px; margin: 2px;",
-            reactive: true,
-            can_focus: true,
-            track_hover: true
-        });
-        const volUpIcon = new St.Icon({
-            icon_name: "audio-volume-high-symbolic",
-            icon_size: 18,
-            icon_type: St.IconType.SYMBOLIC
-        });
-        volUpBtn.set_child(volUpIcon);
-        volUpBtn.connect("button-release-event", (_, event) => {
-            if (event.get_button() !== 3) {
-                this.player.changeVolume(5);
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
-
-        // 5. Botão Mudo
-        const muteBtn = new St.Button({
-            style_class: "popup-menu-item",
-            style: "padding: 8px 12px; margin: 2px;",
-            reactive: true,
-            can_focus: true,
-            track_hover: true
-        });
-        this.muteBtnIcon = new St.Icon({
-            icon_name: "audio-volume-muted-symbolic",
-            icon_size: 18,
-            icon_type: St.IconType.SYMBOLIC
-        });
-        muteBtn.set_child(this.muteBtnIcon);
-        muteBtn.connect("button-release-event", (_, event) => {
-            if (event.get_button() !== 3) {
-                this.player.toggleMute();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
-
-        toolbar.add_child(playBtn);
-        toolbar.add_child(stopBtn);
-        toolbar.add_child(volDownBtn);
-        toolbar.add_child(volUpBtn);
-        toolbar.add_child(muteBtn);
-
-        this.menu.box.add_child(toolbar);
-    }
-
-    _buildInfoSection() {
-        this.infoBox = new St.BoxLayout({
-            vertical: true,
-            x_align: Clutter.ActorAlign.CENTER,
-            style: "padding: 4px 12px 6px 12px;"
-        });
-
-        this.infoStationLabel = new St.Label({
-            text: "RadioViva",
-            style: "font-weight: bold; font-size: 1.1em; text-align: center;"
-        });
-        this.infoTrackLabel = new St.Label({
-            text: "Selecione uma rádio abaixo para ouvir",
-            style: "font-size: 0.9em; opacity: 0.8; text-align: center;"
-        });
-
-        this.infoBox.add_child(this.infoStationLabel);
-        this.infoBox.add_child(this.infoTrackLabel);
-        this.menu.box.add_child(this.infoBox);
-    }
-
-    _buildSearchBar() {
-        const searchBox = new St.BoxLayout({
-            vertical: false,
-            style: "padding: 4px 10px 6px 10px;"
-        });
-        this.searchEntry = new St.Entry({
-            hint_text: "🔍 Buscar rádio, cidade ou estado...",
-            can_focus: true,
-            x_expand: true,
-            style: "padding: 5px 8px; border-radius: 5px;"
-        });
-
-        this.searchEntry.clutter_text.connect("text-changed", () => {
-            const query = this.searchEntry.get_text();
-            this._onSearchQueryChanged(query);
-        });
-
-        searchBox.add_child(this.searchEntry);
-        this.menu.box.add_child(searchBox);
-    }
-
-    _onSearchQueryChanged(query) {
-        this.searchResultsSection.removeAll();
-
-        if (!query || !query.trim()) {
-            this.searchResultsSection.actor.hide();
-            this.mainSection.actor.show();
-            return;
-        }
-
-        this.mainSection.actor.hide();
-        this.searchResultsSection.actor.show();
-
-        const results = this.catalog.search(query, 15);
-        if (results.length === 0) {
-            this.searchResultsSection.addMenuItem(new PopupMenu.PopupMenuItem("Nenhuma rádio encontrada", { reactive: false }));
-            return;
-        }
-
-        results.forEach(station => {
-            const badge = station.state ? `[${station.state}] ` : "";
-            const item = new PopupMenu.PopupIconMenuItem(
-                `${badge}${station.name}`,
-                "media-playback-start-symbolic",
-                St.IconType.SYMBOLIC
-            );
-            item.connect("activate", () => this._playStation(station));
-            this.searchResultsSection.addMenuItem(item);
-        });
-    }
-
-    _buildFavoritesList() {
-        const favs = this.catalog.getFavorites();
-        favs.forEach(station => {
-            const badge = station.state ? `[${station.state}] ` : "";
-            const item = new PopupMenu.PopupIconMenuItem(
-                `${badge}${station.name}`,
-                "media-playback-start-symbolic",
-                St.IconType.SYMBOLIC
-            );
-            item.connect("activate", () => this._playStation(station));
-            this.mainSection.addMenuItem(item);
-        });
-    }
-
-    _buildStatesSubmenu() {
-        const statesSubmenu = new PopupMenu.PopupSubMenuMenuItem("📍 Todas as Rádios por Estado");
-
-        for (const [regionKey, regionData] of Object.entries(this.REGION_MAP)) {
-            const regSubmenu = new PopupMenu.PopupSubMenuMenuItem(regionData.name);
-
-            regionData.ufs.forEach(uf => {
-                const ufName = this.UF_NAMES[uf] || uf;
-                const stationsInUf = this.catalog.getByState(uf);
-
-                if (stationsInUf.length > 0) {
-                    const ufSubmenu = new PopupMenu.PopupSubMenuMenuItem(`${uf} - ${ufName} (${stationsInUf.length})`);
-
-                    stationsInUf.slice(0, 35).forEach(station => {
-                        const item = new PopupMenu.PopupMenuItem(station.name);
-                        item.connect("activate", () => this._playStation(station));
-                        ufSubmenu.menu.addMenuItem(item);
-                    });
-
-                    regSubmenu.menu.addMenuItem(ufSubmenu);
-                }
-            });
-
-            statesSubmenu.menu.addMenuItem(regSubmenu);
-        }
-
-        this.mainSection.addMenuItem(statesSubmenu);
-    }
-
-    _buildGenresSubmenu() {
-        const genresSubmenu = new PopupMenu.PopupSubMenuMenuItem("🎵 Rádios por Gênero");
-        const genres = this.catalog.getGenresList();
-
-        genres.forEach(genre => {
-            const list = this.catalog.getByGenre(genre);
-            if (list.length > 0) {
-                const sub = new PopupMenu.PopupSubMenuMenuItem(`${genre} (${list.length})`);
-                list.slice(0, 25).forEach(station => {
-                    const item = new PopupMenu.PopupMenuItem(station.name);
-                    item.connect("activate", () => this._playStation(station));
-                    sub.menu.addMenuItem(item);
-                });
-                genresSubmenu.menu.addMenuItem(sub);
-            }
-        });
-
-        this.mainSection.addMenuItem(genresSubmenu);
-    }
-
-    _buildSleepTimerSubmenu() {
-        this.timerSubmenu = new PopupMenu.PopupSubMenuMenuItem("⏱️ Sleep Timer (Desligar)");
-
-        [15, 30, 45, 60].forEach(min => {
-            const item = new PopupMenu.PopupMenuItem(`Desligar em ${min} minutos`);
-            item.connect("activate", () => {
-                this.sleepTimer.start(min);
-                Main.notify("RadioViva", `Temporizador ativado: ${min} minutos.`);
-            });
-            this.timerSubmenu.menu.addMenuItem(item);
-        });
-
-        const cancelItem = new PopupMenu.PopupMenuItem("Desativar Timer");
-        cancelItem.connect("activate", () => this.sleepTimer.cancel());
-        this.timerSubmenu.menu.addMenuItem(cancelItem);
-
-        this.mainSection.addMenuItem(this.timerSubmenu);
-    }
-
-    _buildUtilityMenuItems() {
-        const settingsItem = new PopupMenu.PopupIconMenuItem("⚙️ Configurações...", "preferences-system-symbolic", St.IconType.SYMBOLIC);
-        settingsItem.connect("activate", () => {
+        const configItem = new PopupMenu.PopupIconMenuItem("⚙️  Configurar Rádios...", "preferences-system-symbolic", St.IconType.SYMBOLIC);
+        configItem.connect("activate", () => {
             Util.spawnCommandLine(`xlet-settings applet ${this.metadata.uuid} -i ${this.instanceId}`);
         });
-        this.mainSection.addMenuItem(settingsItem);
+        this.menu.addMenuItem(configItem);
+    }
+
+    _onUserStationsChanged() {
+        this._populateUserStations();
+    }
+
+    _populateUserStations() {
+        this.stationsSection.removeAll();
+
+        const stations = this.userStations || [];
+        const enabledStations = stations.filter(s => s.inc !== false);
+
+        if (enabledStations.length === 0) {
+            const emptyItem = new PopupMenu.PopupMenuItem("Nenhuma rádio configurada. Clique abaixo em 'Configurar Rádios'", { reactive: false });
+            this.stationsSection.addMenuItem(emptyItem);
+            return;
+        }
+
+        enabledStations.forEach(station => {
+            const isCurrentPlaying = (this.player.currentStation && this.player.currentStation.url === station.url && this.player.status !== this.PlaybackStatus.STOPPED);
+            const iconName = isCurrentPlaying ? "media-playback-start-symbolic" : "audio-x-generic-symbolic";
+
+            const item = new PopupMenu.PopupIconMenuItem(station.name, iconName, St.IconType.SYMBOLIC);
+            item.connect("activate", () => {
+                this._playStation(station);
+            });
+            this.stationsSection.addMenuItem(item);
+        });
     }
 
     _buildContextMenu() {
@@ -499,10 +232,6 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         volDownItem.connect("activate", () => this.player.changeVolume(-5));
         this._applet_context_menu.addMenuItem(volDownItem);
 
-        const muteItem = new PopupMenu.PopupIconMenuItem("🔇 Mudo", "audio-volume-muted-symbolic", St.IconType.SYMBOLIC);
-        muteItem.connect("activate", () => this.player.toggleMute());
-        this._applet_context_menu.addMenuItem(muteItem);
-
         this._applet_context_menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const settingsItem = new PopupMenu.PopupIconMenuItem("⚙️ Configurações...", "preferences-system-symbolic", St.IconType.SYMBOLIC);
@@ -514,38 +243,44 @@ class RadioVivaApplet extends Applet.TextIconApplet {
 
     _playStation(station) {
         if (!station || !station.url) return;
-
-        this.catalog.addRecent(station);
         this.player.play(station);
+        this._updateNowPlayingInfo();
+    }
 
-        this.infoStationLabel.set_text(station.name);
-        this.infoTrackLabel.set_text("Conectando...");
+    _updateNowPlayingInfo() {
+        const station = this.player.currentStation;
+        if (!station || this.player.status === this.PlaybackStatus.STOPPED) {
+            this.activeSection.actor.visible = false;
+            return;
+        }
+
+        this.activeSection.actor.visible = true;
+        const track = this.player.currentTitle ? `\n${this.player.currentTitle}` : "";
+        this.nowPlayingItem.label.set_text(`📻 ${station.name}${track}`);
     }
 
     _onPlayerStatusChange(status) {
         if (status === this.PlaybackStatus.PLAYING) {
-            this.playBtnIcon.set_icon_name("media-playback-pause-symbolic");
+            this.playPauseItem.label.set_text("⏸️  Pausar");
+            this.playPauseItem.setIconSymbolicName("media-playback-pause-symbolic");
+            this.set_applet_icon_symbolic_name("media-playback-start-symbolic");
             if (this.iconPath) this.set_applet_icon_path(this.iconPath);
         } else if (status === this.PlaybackStatus.PAUSED) {
-            this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
-            this.infoTrackLabel.set_text("Pausado");
-        } else if (status === this.PlaybackStatus.LOADING) {
-            this.infoTrackLabel.set_text("Sintonizando rádio...");
+            this.playPauseItem.label.set_text("▶️  Continuar Reprodução");
+            this.playPauseItem.setIconSymbolicName("media-playback-start-symbolic");
         } else if (status === this.PlaybackStatus.STOPPED) {
-            this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
-            this.infoTrackLabel.set_text("Parado");
-        } else if (status === this.PlaybackStatus.ERROR) {
-            this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
-            this.infoTrackLabel.set_text("Falha ao conectar à transmissão");
+            this.set_applet_icon_symbolic_name("radio-symbolic");
+            if (this.iconPath) this.set_applet_icon_path(this.iconPath);
         }
 
+        this._updateNowPlayingInfo();
+        this._populateUserStations();
         this._updatePanelDisplay();
         this._updateTooltip();
     }
 
     _onPlayerMetadataChange(meta) {
-        const title = meta.title || "Ao vivo";
-        this.infoTrackLabel.set_text(title);
+        this._updateNowPlayingInfo();
         this._updatePanelDisplay();
         this._updateTooltip();
 
@@ -561,26 +296,10 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         this._updateTooltip();
     }
 
-    _onPlayerRecordingChange(isRecording, filePath) {
-        if (isRecording) {
-            Main.notify("RadioViva", `Gravando: ${filePath}`);
-        } else if (filePath) {
-            Main.notify("RadioViva", `Gravação salva: ${filePath}`);
-        }
-    }
-
-    _updateSleepTimerLabel() {
-        if (this.sleepTimer.isActive) {
-            this.timerSubmenu.label.set_text(`⏱️ Sleep Timer (${this.sleepTimer.getFormattedTime()})`);
-        } else {
-            this.timerSubmenu.label.set_text("⏱️ Sleep Timer (Desligar)");
-        }
-    }
-
     _updateTooltip() {
         const station = this.player.currentStation;
         if (!station || this.player.status === this.PlaybackStatus.STOPPED) {
-            this.set_applet_tooltip("RadioViva - Rádios do Brasil (Parado)");
+            this.set_applet_tooltip("RadioViva - Rádios do Brasil");
             return;
         }
 
@@ -590,9 +309,6 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     }
 
     on_applet_removed_from_panel() {
-        if (this.sleepTimer) {
-            this.sleepTimer.destroy();
-        }
         if (this.player) {
             this.player.destroy();
         }
