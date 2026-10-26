@@ -1,7 +1,6 @@
 /**
  * RadioViva - Applet para Linux Mint Cinnamon
- * Interface limpa, rápida e 100% nativa.
- * Integração com a janela de configurações e catálogo de 1.300+ rádios do Brasil.
+ * Player de controle visível e completo com lista de rádios personalizável.
  */
 
 const Applet = imports.ui.applet;
@@ -125,7 +124,7 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     }
 
     on_applet_middle_clicked(event) {
-        this.player.togglePause();
+        this._togglePlayPause();
     }
 
     _buildMenu() {
@@ -133,25 +132,10 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         this.menu = new Applet.AppletPopupMenu(this, this.orientation);
         this.menuManager.addMenu(this.menu);
 
-        // Seção ativa (só exibida quando uma rádio está tocando ou pausada)
-        this.activeSection = new PopupMenu.PopupMenuSection();
-        this.menu.addMenuItem(this.activeSection);
+        // 1. Player Card de Controle (Sempre visível no topo)
+        this._buildPlayerControlCard();
 
-        // Info do Now Playing
-        this.nowPlayingItem = new PopupMenu.PopupMenuItem("Nenhuma rádio sintonizada", { reactive: false });
-        this.activeSection.addMenuItem(this.nowPlayingItem);
-
-        // Botão Stop (Parar)
-        this.stopItem = new PopupMenu.PopupIconMenuItem("⏹️  Parar Reprodução", "media-playback-stop-symbolic", St.IconType.SYMBOLIC);
-        this.stopItem.connect("activate", () => this.player.stop());
-        this.activeSection.addMenuItem(this.stopItem);
-
-        // Botão Play/Pause
-        this.playPauseItem = new PopupMenu.PopupIconMenuItem("⏸️  Pausar", "media-playback-pause-symbolic", St.IconType.SYMBOLIC);
-        this.playPauseItem.connect("activate", () => this.player.togglePause());
-        this.activeSection.addMenuItem(this.playPauseItem);
-
-        // Slider de Volume
+        // 2. Slider de Volume
         this.volumeSlider = new PopupMenu.PopupSliderMenuItem(this.player.currentVolume / 100);
         this.volumeSlider.connect("value-changed", (slider, val) => {
             const vol = Math.round(val * 100);
@@ -160,20 +144,16 @@ class RadioVivaApplet extends Applet.TextIconApplet {
                 this.initialVolume = vol;
             }
         });
-        this.activeSection.addMenuItem(this.volumeSlider);
+        this.menu.addMenuItem(this.volumeSlider);
 
-        this.activeSeparator = new PopupMenu.PopupSeparatorMenuItem();
-        this.activeSection.addMenuItem(this.activeSeparator);
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // Inicialmente esconde a seção ativa se nada estiver tocando
-        this.activeSection.actor.visible = false;
-
-        // Seção das Rádios do Usuário (Minhas Rádios)
+        // 3. Seção das Rádios do Usuário (Minhas Rádios)
         this.stationsSection = new PopupMenu.PopupMenuSection();
         this.menu.addMenuItem(this.stationsSection);
         this._populateUserStations();
 
-        // Separador e Acesso às Configurações
+        // 4. Separador e Botão de Configurações
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         const configItem = new PopupMenu.PopupIconMenuItem("⚙️  Configurar Rádios...", "preferences-system-symbolic", St.IconType.SYMBOLIC);
@@ -181,6 +161,108 @@ class RadioVivaApplet extends Applet.TextIconApplet {
             Util.spawnCommandLine(`xlet-settings applet ${this.metadata.uuid} -i ${this.instanceId}`);
         });
         this.menu.addMenuItem(configItem);
+    }
+
+    _createControlButton(iconName, tooltipText, styleClass, onClick) {
+        const btn = new St.Button({
+            style_class: `radioviva-btn ${styleClass || ''}`,
+            reactive: true,
+            can_focus: true,
+            track_hover: true
+        });
+        const icon = new St.Icon({
+            icon_name: iconName,
+            icon_size: 20,
+            icon_type: St.IconType.SYMBOLIC
+        });
+        btn.set_child(icon);
+
+        btn.connect("clicked", () => {
+            onClick();
+        });
+
+        return { btn, icon };
+    }
+
+    _buildPlayerControlCard() {
+        this.playerCard = new St.BoxLayout({
+            vertical: true,
+            style_class: "radioviva-player-card"
+        });
+
+        // Nome da Estação
+        this.stationLabel = new St.Label({
+            text: "RadioViva",
+            style_class: "radioviva-station-name"
+        });
+        this.playerCard.add_child(this.stationLabel);
+
+        // Nome da Música / Programa
+        this.trackLabel = new St.Label({
+            text: "Pronto para tocar",
+            style_class: "radioviva-track-title"
+        });
+        this.playerCard.add_child(this.trackLabel);
+
+        // Barra de Botões de Controle (Play/Pause, Stop, Vol -, Vol +, Mute)
+        const toolbar = new St.BoxLayout({
+            vertical: false,
+            x_align: Clutter.ActorAlign.CENTER
+        });
+
+        // Botão Play / Pause
+        const playCtrl = this._createControlButton("media-playback-start-symbolic", "Play / Pause", "radioviva-btn-play", () => {
+            this._togglePlayPause();
+        });
+        this.playBtn = playCtrl.btn;
+        this.playBtnIcon = playCtrl.icon;
+
+        // Botão Stop (Parar)
+        const stopCtrl = this._createControlButton("media-playback-stop-symbolic", "Parar", "radioviva-btn-stop", () => {
+            this.player.stop();
+        });
+        this.stopBtn = stopCtrl.btn;
+
+        // Botão Diminuir Volume (-)
+        const volDownCtrl = this._createControlButton("audio-volume-low-symbolic", "Diminuir Volume", "", () => {
+            this.player.changeVolume(-5);
+        });
+
+        // Botão Aumentar Volume (+)
+        const volUpCtrl = this._createControlButton("audio-volume-high-symbolic", "Aumentar Volume", "", () => {
+            this.player.changeVolume(5);
+        });
+
+        // Botão Mudo (Mute)
+        const muteCtrl = this._createControlButton("audio-volume-muted-symbolic", "Mudo", "", () => {
+            this.player.toggleMute();
+        });
+
+        toolbar.add_child(this.playBtn);
+        toolbar.add_child(this.stopBtn);
+        toolbar.add_child(volDownCtrl.btn);
+        toolbar.add_child(volUpCtrl.btn);
+        toolbar.add_child(muteCtrl.btn);
+
+        this.playerCard.add_child(toolbar);
+
+        this.menu.box.add_child(this.playerCard);
+    }
+
+    _togglePlayPause() {
+        if (this.player.status === this.PlaybackStatus.PLAYING) {
+            this.player.togglePause();
+        } else if (this.player.status === this.PlaybackStatus.PAUSED) {
+            this.player.togglePause();
+        } else if (this.player.currentStation) {
+            this.player.play(this.player.currentStation);
+        } else {
+            const stations = this.userStations || [];
+            const first = stations.find(s => s.inc !== false);
+            if (first) {
+                this._playStation(first);
+            }
+        }
     }
 
     _onUserStationsChanged() {
@@ -200,12 +282,16 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         }
 
         enabledStations.forEach(station => {
-            const isCurrentPlaying = (this.player.currentStation && this.player.currentStation.url === station.url && this.player.status !== this.PlaybackStatus.STOPPED);
-            const iconName = isCurrentPlaying ? "media-playback-start-symbolic" : "audio-x-generic-symbolic";
+            const isPlayingThis = (this.player.currentStation && this.player.currentStation.url === station.url && this.player.status === this.PlaybackStatus.PLAYING);
+            const iconName = isPlayingThis ? "media-playback-pause-symbolic" : "media-playback-start-symbolic";
 
             const item = new PopupMenu.PopupIconMenuItem(station.name, iconName, St.IconType.SYMBOLIC);
             item.connect("activate", () => {
-                this._playStation(station);
+                if (isPlayingThis) {
+                    this.player.togglePause();
+                } else {
+                    this._playStation(station);
+                }
             });
             this.stationsSection.addMenuItem(item);
         });
@@ -219,7 +305,7 @@ class RadioVivaApplet extends Applet.TextIconApplet {
         this._applet_context_menu.addMenuItem(stopItem);
 
         const playPauseItem = new PopupMenu.PopupIconMenuItem("⏯️ Play / Pause", "media-playback-start-symbolic", St.IconType.SYMBOLIC);
-        playPauseItem.connect("activate", () => this.player.togglePause());
+        playPauseItem.connect("activate", () => this._togglePlayPause());
         this._applet_context_menu.addMenuItem(playPauseItem);
 
         this._applet_context_menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -244,43 +330,38 @@ class RadioVivaApplet extends Applet.TextIconApplet {
     _playStation(station) {
         if (!station || !station.url) return;
         this.player.play(station);
-        this._updateNowPlayingInfo();
-    }
-
-    _updateNowPlayingInfo() {
-        const station = this.player.currentStation;
-        if (!station || this.player.status === this.PlaybackStatus.STOPPED) {
-            this.activeSection.actor.visible = false;
-            return;
-        }
-
-        this.activeSection.actor.visible = true;
-        const track = this.player.currentTitle ? `\n${this.player.currentTitle}` : "";
-        this.nowPlayingItem.label.set_text(`📻 ${station.name}${track}`);
+        this.stationLabel.set_text(station.name);
+        this.trackLabel.set_text("Conectando...");
     }
 
     _onPlayerStatusChange(status) {
         if (status === this.PlaybackStatus.PLAYING) {
-            this.playPauseItem.label.set_text("⏸️  Pausar");
-            this.playPauseItem.setIconSymbolicName("media-playback-pause-symbolic");
+            this.playBtnIcon.set_icon_name("media-playback-pause-symbolic");
             this.set_applet_icon_symbolic_name("media-playback-start-symbolic");
             if (this.iconPath) this.set_applet_icon_path(this.iconPath);
         } else if (status === this.PlaybackStatus.PAUSED) {
-            this.playPauseItem.label.set_text("▶️  Continuar Reprodução");
-            this.playPauseItem.setIconSymbolicName("media-playback-start-symbolic");
+            this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
+            this.trackLabel.set_text("Pausado");
         } else if (status === this.PlaybackStatus.STOPPED) {
+            this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
+            this.trackLabel.set_text("Parado");
             this.set_applet_icon_symbolic_name("radio-symbolic");
             if (this.iconPath) this.set_applet_icon_path(this.iconPath);
+        } else if (status === this.PlaybackStatus.LOADING) {
+            this.trackLabel.set_text("Sintonizando...");
+        } else if (status === this.PlaybackStatus.ERROR) {
+            this.playBtnIcon.set_icon_name("media-playback-start-symbolic");
+            this.trackLabel.set_text("Erro ao conectar");
         }
 
-        this._updateNowPlayingInfo();
         this._populateUserStations();
         this._updatePanelDisplay();
         this._updateTooltip();
     }
 
     _onPlayerMetadataChange(meta) {
-        this._updateNowPlayingInfo();
+        const title = meta.title || "Ao vivo";
+        this.trackLabel.set_text(title);
         this._updatePanelDisplay();
         this._updateTooltip();
 
