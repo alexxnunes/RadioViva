@@ -4,7 +4,9 @@
     "pages": [
       "page-my-stations",
       "page-search",
-      "page-general"
+      "page-appearance",
+      "page-audio",
+      "page-recording"
     ],
     "page-my-stations": {
       "type": "page",
@@ -20,44 +22,82 @@
         "sec-search"
       ]
     },
-    "page-general": {
+    "page-appearance": {
       "type": "page",
-      "title": "Preferências Gerais",
+      "title": "Barra de Tarefas & Visual",
       "sections": [
-        "sec-appearance",
-        "sec-playback"
+        "sec-appearance-panel",
+        "sec-appearance-menu"
+      ]
+    },
+    "page-audio": {
+      "type": "page",
+      "title": "Áudio & Reprodução",
+      "sections": [
+        "sec-playback",
+        "sec-notifications"
+      ]
+    },
+    "page-recording": {
+      "type": "page",
+      "title": "Gravação ao Vivo",
+      "sections": [
+        "sec-recording"
       ]
     },
     "sec-my-stations": {
       "type": "section",
-      "title": "Rádios no Painel (Adicione, Edite ou Reordene)",
+      "title": "Rádios do Menu (Adicione, Edite ou Reordene)",
       "keys": [
         "user-stations"
       ]
     },
     "sec-search": {
       "type": "section",
-      "title": "Pesquisar Rádios Brasileiras e Adicionar",
+      "title": "Catálogo de Emissoras Brasileiras",
       "keys": [
         "radio-search-widget"
       ]
     },
-    "sec-appearance": {
+    "sec-appearance-panel": {
       "type": "section",
       "title": "Exibição na Barra de Tarefas",
       "keys": [
+        "icon-style",
         "show-station-on-panel",
         "panel-text-type",
         "max-panel-text-length"
       ]
     },
+    "sec-appearance-menu": {
+      "type": "section",
+      "title": "Comportamento do Menu Popup",
+      "keys": [
+        "keep-menu-open-on-select"
+      ]
+    },
     "sec-playback": {
       "type": "section",
-      "title": "Áudio e Notificações",
+      "title": "Controles de Som e Conexão",
       "keys": [
         "initial-volume",
+        "volume-step",
         "keep-volume-between-sessions",
+        "auto-reconnect"
+      ]
+    },
+    "sec-notifications": {
+      "type": "section",
+      "title": "Notificações na Área de Trabalho",
+      "keys": [
         "show-notifications",
+        "notify-on-station-change"
+      ]
+    },
+    "sec-recording": {
+      "type": "section",
+      "title": "Destino das Gravações",
+      "keys": [
         "record-directory"
       ]
     }
@@ -151,6 +191,15 @@
     "file": "RadioSearchWidget.py",
     "widget": "RadioSearchWidget"
   },
+  "icon-style": {
+    "type": "combobox",
+    "default": "color",
+    "description": "Estilo do ícone",
+    "options": {
+      "Colorido (RadioViva Verde/Dourado)": "color",
+      "Simbólico Monocromático": "symbolic"
+    }
+  },
   "show-station-on-panel": {
     "type": "checkbox",
     "default": false,
@@ -178,10 +227,11 @@
     "description": "Limite de caracteres na barra",
     "dependency": "show-station-on-panel"
   },
-  "show-notifications": {
+  "keep-menu-open-on-select": {
     "type": "checkbox",
     "default": true,
-    "description": "Notificar quando a rádio ou música mudar"
+    "description": "Manter o menu aberto ao clicar em uma rádio",
+    "tooltip": "Permite continuar controlando o player e só fecha quando clicar fora do menu"
   },
   "initial-volume": {
     "type": "spinbutton",
@@ -192,10 +242,34 @@
     "units": "%",
     "description": "Volume inicial padrão"
   },
+  "volume-step": {
+    "type": "spinbutton",
+    "default": 5,
+    "min": 1,
+    "max": 20,
+    "step": 1,
+    "units": "%",
+    "description": "Passo de alteração de volume (scroll e botões)"
+  },
   "keep-volume-between-sessions": {
     "type": "checkbox",
     "default": true,
     "description": "Lembrar o último volume utilizado"
+  },
+  "auto-reconnect": {
+    "type": "checkbox",
+    "default": true,
+    "description": "Reconectar automaticamente se a conexão oscilar"
+  },
+  "show-notifications": {
+    "type": "checkbox",
+    "default": true,
+    "description": "Notificar quando a música ou programa mudar"
+  },
+  "notify-on-station-change": {
+    "type": "checkbox",
+    "default": false,
+    "description": "Notificar ao sintonizar uma nova rádio"
   },
   "record-directory": {
     "type": "entry",
