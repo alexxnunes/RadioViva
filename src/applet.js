@@ -71,13 +71,26 @@ class RadioVivaApplet extends Applet.TextIconApplet {
 
     _updateIcon() {
         const style = this.iconStyle || "color";
-        const iconFile = Gio.File.new_for_path(this.iconPath);
+        const isPlaying = (this.player.status === this.PlaybackStatus.PLAYING);
 
-        if (style === "color" && iconFile.query_exists(null)) {
-            this.set_applet_icon_path(this.iconPath);
+        if (style === "color") {
+            const iconFile = Gio.File.new_for_path(this.iconPath);
+            if (iconFile.query_exists(null)) {
+                this.set_applet_icon_path(this.iconPath);
+                return;
+            }
+        }
+
+        // Estilo Monocromático (Symbolic SVG)
+        const symIconPath = isPlaying
+            ? `${this.metadata.path}/icons/radioviva-playing-symbolic.svg`
+            : `${this.metadata.path}/icons/radioviva-symbolic.svg`;
+
+        const symFile = Gio.File.new_for_path(symIconPath);
+        if (symFile.query_exists(null)) {
+            this.set_applet_icon_path(symIconPath);
         } else {
-            const sym = (this.player.status === this.PlaybackStatus.PLAYING) ? "media-playback-start-symbolic" : "radio-symbolic";
-            this.set_applet_icon_symbolic_name(sym);
+            this.set_applet_icon_symbolic_name(isPlaying ? "media-playback-start-symbolic" : "audio-x-generic-symbolic");
         }
     }
 
@@ -251,11 +264,19 @@ class RadioVivaApplet extends Applet.TextIconApplet {
             this.player.toggleMute();
         });
 
+        // Botão Ver Programação / Site da Rádio
+        const progCtrl = this._createControlButton("applications-internet-symbolic", "Ver Programação da Rádio", "", () => {
+            const station = this.player.currentStation;
+            const term = station ? station.name : "radios do brasil";
+            Util.spawnCommandLine(`xdg-open "https://www.google.com/search?q=${encodeURIComponent(term + ' programacao grade')}"`);
+        });
+
         toolbar.add_child(this.playBtn);
         toolbar.add_child(this.stopBtn);
         toolbar.add_child(volDownCtrl.btn);
         toolbar.add_child(volUpCtrl.btn);
         toolbar.add_child(muteCtrl.btn);
+        toolbar.add_child(progCtrl.btn);
 
         this.playerCard.add_child(toolbar);
 
