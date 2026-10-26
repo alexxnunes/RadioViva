@@ -51,12 +51,14 @@ print(str(arr))
 fi
 
 # 5. Encerra qualquer processo anterior do MPV para evitar reprodução órfã
-pkill -u "$UID" -f "mpv.*radioviva" || true
+pkill -9 -u "$UID" -f "^/usr/bin/mpv .*--title=RadioViva$" || true
 
-# 6. Recarrega Cinnamon para aplicar as mudanças
-if command -v cinnamon-dbus-command &> /dev/null; then
-    echo "[*] Recarregando painel do Cinnamon..."
-    cinnamon-dbus-command RestartCinnamon 0 || true
+# 6. Recarrega a extensão no Cinnamon de forma limpa (chama on_applet_removed_from_panel)
+if command -v dbus-send &> /dev/null; then
+    echo "[*] Recarregando applet no painel do Cinnamon..."
+    dbus-send --session --dest=org.Cinnamon.LookingGlass --type=method_call \
+        /org/Cinnamon/LookingGlass org.Cinnamon.LookingGlass.ReloadExtension \
+        string:"$APPLET_UUID" string:'APPLET' || true
 fi
 
 echo "=============================================="
